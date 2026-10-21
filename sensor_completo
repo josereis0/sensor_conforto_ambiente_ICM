@@ -1,0 +1,218 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <DHT.h>
+
+// ========================================
+// DHT11
+// ========================================
+
+#define DHT_PIN 5
+#define DHTTYPE DHT11
+
+DHT dht(DHT_PIN, DHTTYPE);
+
+// ========================================
+// SENSOR LDR
+// ========================================
+
+#define LDR_PIN 34
+
+// ========================================
+// WI-FI
+// ========================================
+
+const char* ssid = "INSTITUTO_";
+const char* password = "fazer@2023";
+
+// ========================================
+// THINGSPEAK
+// ========================================
+
+String apiKey = "ZHUG209OMIA2WZ79";
+
+const char* server =
+  "https://api.thingspeak.com/update.json";
+
+// ========================================
+// LEITURA MÉDIA DO LDR
+// ========================================
+
+int lerLuminosidade() {
+
+  long soma = 0;
+
+  for (int i = 0; i < 20; i++) {
+
+    soma += analogRead(LDR_PIN);
+
+    delay(5);
+  }
+
+  return soma / 20;
+}
+
+// ========================================
+// CONEXÃO WI-FI
+// ========================================
+
+bool conectarWiFi() {
+
+  Serial.println();
+  Serial.print("Conectando ao Wi-Fi: ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  int tentativas = 0;
+
+  while (WiFi.status() != WL_CONNECTED &&
+         tentativas < 30) {
+
+    delay(500);
+    Serial.print(".");
+
+    tentativas++;
+  }
+
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+
+    Serial.println("Wi-Fi conectado!");
+
+    Serial.print("IP: ");
+    Serial.println(WiFi.localIP());
+
+    return true;
+  }
+
+  Serial.println("ERRO: Não foi possível conectar ao Wi-Fi.");
+
+  return false;
+}
+
+// ========================================
+// SETUP
+// ========================================
+
+void setup() {
+
+  Serial.begin(115200);
+
+  // Inicializa DHT11
+  dht.begin();
+
+  // Inicializa LDR
+  pinMode(LDR_PIN, INPUT);
+
+  // Conecta ao Wi-Fi
+  conectarWiFi();
+}
+
+// ========================================
+// LOOP
+// ========================================
+
+void loop() {
+
+  // ======================================
+  // LÊ DHT11
+  // ======================================
+
+  float temperatura = dht.readTemperature();
+  float umidade = dht.readHumidity();
+
+  // ======================================
+  // LÊ LDR
+  // ======================================
+
+  int luminosidade = lerLuminosidade();
+
+  // ======================================
+  // VERIFICA DHT11
+  // ======================================
+
+  if (isnan(temperatura) || isnan(umidade)) {
+
+    Serial.println();
+    Serial.println("ERRO: Falha na leitura do DHT11!");
+
+    delay(2000);
+
+    return;
+  }
+
+  // ======================================
+  // MOSTRA OS DADOS
+  // ======================================
+
+  Serial.println();
+  Serial.println("========= DADOS =========");
+
+  Serial.print("Temperatura: ");
+  Serial.print(temperatura, 2);
+  Serial.println(" °C");
+
+  Serial.print("Umidade: ");
+  Serial.print(umidade, 2);
+  Serial.println(" %");
+
+  Serial.print("Luminosidade media: ");
+  Serial.println(luminosidade);
+
+  Serial.println("=========================");
+
+  // ======================================
+  // VERIFICA WI-FI
+  // ======================================
+
+  if (WiFi.status() != WL_CONNECTED) {
+
+    Serial.println("Wi-Fi desconectado.");
+
+    conectarWiFi();
+  }
+
+  // ======================================
+  // ENVIA PARA THINGSPEAK
+  // ======================================
+
+  if (WiFi.status() == WL_CONNECTED) {
+
+    HTTPClient http;
+
+    String url = String(server) +
+                 "?api_key=" + apiKey +
+                 "&field1=" + String(temperatura, 2) +
+                 "&field2=" + String(umidade, 2);
+
+    // IMPORTANTE:
+    // Por enquanto estamos enviando
+    // apenas temperatura e umidade.
+    //
+    // Depois que funcionar, adicionaremos:
+    // &field3=luminosidade
+
+    Serial.println();
+    Serial.println("Enviando para ThingSpeak...");
+
+    http.begin(url);
+
+    int httpCode = http.GET();
+
+    Serial.print("HTTP Code: ");
+    Serial.println(httpCode);
+
+    String resposta = http.getString();
+
+    Serial.print("Resposta ThingSpeak: ");
+    Serial.println(resposta);
+
+    http.end();
+  }
+
+  Serial.println();
+  Serial.println("Aguardando 5 segundos...");
+
+  delay(5000);
+}
